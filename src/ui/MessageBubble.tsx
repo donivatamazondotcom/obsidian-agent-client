@@ -14,6 +14,8 @@ import { segmentAssistantMessage } from "../services/a2ui/segmenter";
 import { deriveA2uiActionMessageView } from "../services/a2ui/action";
 import type { A2uiButton } from "../services/a2ui/action";
 import type { A2uiValidatedSurface } from "../services/a2ui/types";
+import type { A2uiDispatchOutcome } from "../services/session-dispatch-port";
+import type { TabSessionState } from "../types/tab";
 import { t } from "../i18n";
 
 // ---------------------------------------------------------------------------
@@ -242,11 +244,15 @@ export interface A2uiBubbleContext {
 	isSending: boolean;
 	isQueued: boolean;
 	isRestoringSession: boolean;
-	/** Build + dispatch the action; resolves false to re-enable (T11). */
+	/** Per-tab session lifecycle state (drives reconnect-on-click, A2UI-I08). */
+	sessionState: TabSessionState;
+	/** surfaceId of an action held for reconnect, or null. */
+	heldSurfaceId: string | null;
+	/** Build + dispatch the action; the outcome drives the pending lifecycle. */
 	onActivate: (
 		surface: A2uiValidatedSurface,
 		button: A2uiButton,
-	) => Promise<boolean>;
+	) => Promise<A2uiDispatchOutcome>;
 }
 
 /**
@@ -298,6 +304,8 @@ function AssistantTextWithSurfaces({
 						isQueued={a2ui.isQueued}
 						isRestoringSession={a2ui.isRestoringSession}
 						isStreamingTurn={isStreamingTurn}
+						sessionState={a2ui.sessionState}
+						heldSurfaceId={a2ui.heldSurfaceId}
 						onActivate={a2ui.onActivate}
 					/>
 				),

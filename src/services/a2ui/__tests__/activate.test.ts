@@ -11,7 +11,10 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { activateA2uiButton } from "../activate";
-import type { SessionDispatchPort } from "../../session-dispatch-port";
+import type {
+	A2uiDispatchOutcome,
+	SessionDispatchPort,
+} from "../../session-dispatch-port";
 import type { A2uiButton } from "../action";
 
 const BUTTON: A2uiButton = {
@@ -25,15 +28,22 @@ const BUTTON: A2uiButton = {
 function makePort(overrides: Partial<SessionDispatchPort> = {}): {
 	port: SessionDispatchPort;
 	sent: string[];
+	surfaceIds: string[];
 } {
 	const sent: string[] = [];
+	const surfaceIds: string[] = [];
 	return {
 		sent,
+		surfaceIds,
 		port: {
+			mode: () => ({ kind: "sendNow" }),
 			canSendNow: () => true,
-			sendDetached: (text: string) => {
+			sendDetached: (text: string, surfaceId: string) => {
 				sent.push(text);
-				return new Promise<boolean>(() => {}); // never resolves — turn streams forever
+				surfaceIds.push(surfaceId);
+				// Never resolves — the turn streams forever (the precise
+				// failure shape a refocus-behind-await would hit).
+				return new Promise<A2uiDispatchOutcome>(() => {});
 			},
 			notify: () => {},
 			...overrides,
@@ -60,8 +70,9 @@ describe("activateA2uiButton — refocus at dispatch (A2UI-I01)", () => {
 
 	it("does not refocus when the port refuses the send (cannot send now)", () => {
 		const { port } = makePort({
+			mode: () => ({ kind: "refuse", reason: "sending" }),
 			canSendNow: () => false,
-			sendDetached: () => Promise.resolve(false),
+			sendDetached: () => Promise.resolve("refused"),
 		});
 		const refocus = vi.fn();
 		void activateA2uiButton({
@@ -74,9 +85,9 @@ describe("activateA2uiButton — refocus at dispatch (A2UI-I01)", () => {
 		expect(refocus).not.toHaveBeenCalled();
 	});
 
-	it("returns the port's result for the pending/answered lifecycle (T11)", async () => {
+	it("returns the port's outcome for the pending/answered lifecycle (T11)", async () => {
 		const { port } = makePort({
-			sendDetached: () => Promise.resolve(false),
+			sendDetached: () => Promise.resolve("failed"),
 		});
 		await expect(
 			activateA2uiButton({
@@ -86,6 +97,36 @@ describe("activateA2uiButton — refocus at dispatch (A2UI-I01)", () => {
 				now: () => "2026-07-16T13:50:00.000Z",
 				refocusComposer: () => {},
 			}),
-		).resolves.toBe(false);
+		).resolves.toBe("failed");
+	});
+
+	// A2UI-I08: the surfaceId must reach the port so a HELD action can be
+	// attributed back to the surface that is waiting on it.
+	it("forwards the surfaceId to the port", () => {
+		const { port, surfaceIds } = makePort();
+		void activateA2uiButton({
+			port,
+			surfaceId: "migration-scope-7f3a",
+			button: BUTTON,
+			now: () => "2026-07-16T13:50:00.000Z",
+			refocusComposer: () => {},
+		});
+		expect(surfaceIds).toEqual(["migration-scope-7f3a"]);
+	});
+
+	it("refocuses when the action is HELD for reconnect (the click did take effect)", () => {
+		const { port } = makePort({
+			mode: () => ({ kind: "acquireAndSend" }),
+			sendDetached: () => Promise.resolve("held"),
+		});
+		const refocus = vi.fn();
+		void activateA2uiButton({
+			port,
+			surfaceId: "s-1a2b",
+			button: BUTTON,
+			now: () => "2026-07-16T13:50:00.000Z",
+			refocusComposer: refocus,
+		});
+		expect(refocus).toHaveBeenCalledTimes(1);
 	});
 });

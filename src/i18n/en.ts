@@ -332,6 +332,14 @@ export const en = {
 		"Agent Console loaded, but these parts are unavailable: {parts}. Try reloading Obsidian; if it keeps happening, another plugin may be conflicting.",
 	"notices.cantSendNow":
 		"Can't send right now — try again when the agent is idle.",
+	"notices.a2uiBusy":
+		"Wait for the agent to finish its reply, then pick an option.",
+	"notices.a2uiPermission":
+		"Answer the agent's request above first, then pick an option.",
+	"notices.a2uiQueued":
+		"You already have a message waiting to send. Send or delete it first, then pick an option.",
+	"notices.a2uiRestoring":
+		"Still loading this conversation — try again in a moment.",
 	"notices.prefixed": "[Agent Console] {message}",
 	"notices.unknownError": "Unknown error",
 	// --- Phase 2: modals ---
@@ -498,6 +506,8 @@ export const en = {
 		"{queueKey} to queue · {steerKey} to send now",
 	"chat.composer.queuedBannerReady": "Queued — sends when {agent} is done",
 	"chat.composer.queuedBannerWaiting": "Queued — sends when ready",
+	"chat.composer.queuedBannerAction":
+		"Sending your choice — waiting for the agent to start again",
 	// ---- Phase 3: message list + landing ----
 	"chat.messages.sending": "Sending…",
 	"chat.messages.waitingForPermission": "Waiting for permission...",
@@ -603,11 +613,14 @@ export const en = {
 	// ---- Phase 3: A2UI interactive buttons ----
 	"chat.a2ui.disabledStreaming": "Available when this reply finishes",
 	"chat.a2ui.disabledSending": "Wait for the current reply to finish",
+	"chat.a2ui.disabledPermission": "Answer the agent's request first",
 	"chat.a2ui.disabledQueued": "A message is already waiting to send",
 	"chat.a2ui.disabledRestoring": "Loading the conversation first",
 	"chat.a2ui.disabledPending": "Sending your choice…",
 	"chat.a2ui.disabledAnswered": "Already answered",
 	"chat.a2ui.disabledSuperseded": "Newer choices are below",
+	"chat.a2ui.hintReconnect": "Starts the agent again and sends your choice",
+	"chat.a2ui.pendingReconnect": "Sending your choice when the agent is back…",
 	"chat.a2ui.inertReason":
 		"These buttons couldn't be shown safely, so the content is left as code.",
 	// ---- Phase 3: banners, blocks, and errors ----

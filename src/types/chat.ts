@@ -276,6 +276,18 @@ export interface QueuedMessage {
 	content: string;
 	/** Attachments staged at queue time (in-memory; not persisted). */
 	attachments?: AttachedFile[];
+	/**
+	 * Set when this message is a DETACHED send — an agent-emitted interactive
+	 * surface action (A2UI-I08), not composer text. Carries the originating
+	 * surfaceId. Two consequences the composer depends on:
+	 *
+	 *  1. The flush must NOT clear the composer (D8: an action send never
+	 *     touches an unsent draft).
+	 *  2. A failed acquisition RELEASES the slot instead of holding it — there
+	 *     is no composer text to retry from, so holding would strand the
+	 *     surface as pending with the composer blocked.
+	 */
+	detachedSurfaceId?: string;
 }
 /**
  * Prompt Content Types

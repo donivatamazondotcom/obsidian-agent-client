@@ -180,6 +180,7 @@ src/
 │       ├── MarkdownRenderer.tsx # Obsidian markdown rendering
 │       └── AttachmentStrip.tsx  # Attachment preview strip
 ├── resolvers/                   # Pure decision functions (derive*/decide*) — no React/Obsidian/SDK imports; exhaustive switches (resolver-zone.test.ts)
+│   ├── a2ui-dispatch.ts            # deriveA2uiTabDispatch — pure tab-level resolver for what activating an interactive-surface control does (sendNow / acquireAndSend / refuse+reason); read by BOTH the surface renderer (via deriveSurfaceActionAffordance) and SessionDispatchPort so an enabled button always has a dispatchable port; gates on intent, not connection state (A2UI-I08)
 │   ├── agent-picker-options.ts     # deriveAgentPickerOptions — pure landing agent-picker resolver (detection-gated, default-first, shown only on a real choice)
 │   ├── agent-switch.ts             # Switch a lazy tab's agent so the first message connects to the switched agent
 │   ├── composer-affordances.ts     # deriveComposerAffordances — pure composer send-target + control-composition resolver (surface × composer-caps × hasQuickPrompts → sendMode/quickPromptFire/context/showAttachments/showConfigSelectors); connection-state-independent (does NOT read lazyState); shared by the landing + in-tab composer so they can't drift; layers with deriveSendAffordance (enablement) — no overlap

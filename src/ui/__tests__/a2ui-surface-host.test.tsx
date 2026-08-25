@@ -33,6 +33,7 @@ vi.mock("../shared/MarkdownRenderer", async () => {
 afterEach(cleanup);
 
 import { A2uiSurfaceHost } from "../A2uiSurfaceHost";
+import type { A2uiDispatchOutcome } from "../../services/session-dispatch-port";
 import { initializeLogger } from "../../utils/logger";
 import type AgentClientPlugin from "../../plugin";
 
@@ -71,7 +72,8 @@ function renderHost(
 	overrides: Partial<React.ComponentProps<typeof A2uiSurfaceHost>> = {},
 ) {
 	const onActivate = vi.fn(
-		overrides.onActivate ?? (async (): Promise<boolean> => true),
+		overrides.onActivate ??
+			(async (): Promise<A2uiDispatchOutcome> => "sent"),
 	);
 	const body = overrides.body ?? ENVELOPE;
 	const utils = render(
@@ -86,6 +88,8 @@ function renderHost(
 			isQueued={overrides.isQueued ?? false}
 			isRestoringSession={overrides.isRestoringSession ?? false}
 			isStreamingTurn={overrides.isStreamingTurn ?? false}
+			sessionState={overrides.sessionState ?? "ready"}
+			heldSurfaceId={overrides.heldSurfaceId ?? null}
 			onActivate={onActivate}
 		/>,
 	);
@@ -149,20 +153,77 @@ describe("A2uiSurfaceHost — activation (T02/T03)", () => {
 	});
 
 	it("marks the surface pending during dispatch — no double submission", async () => {
-		let resolveSend: (v: boolean) => void = () => {};
+		let resolveSend: (v: A2uiDispatchOutcome) => void = () => {};
 		const onActivate = vi.fn(
-			() => new Promise<boolean>((r) => (resolveSend = r)),
+			() => new Promise<A2uiDispatchOutcome>((r) => (resolveSend = r)),
 		);
 		renderHost({ onActivate });
 		const [button] = screen.getAllByRole("button");
 		fireEvent.click(button);
 		fireEvent.click(button); // second click while pending
 		expect(onActivate).toHaveBeenCalledTimes(1);
-		resolveSend(true);
+		resolveSend("sent");
+	});
+
+	// ---- A2UI-I08 ----
+	it.each(["idle", "connecting", "error"] as const)(
+		"stays clickable with no live session (%s) and dispatches",
+		(sessionState) => {
+			const { onActivate } = renderHost({ sessionState });
+			const [button] = screen.getAllByRole("button");
+			expect((button as HTMLButtonElement).disabled).toBe(false);
+			fireEvent.click(button);
+			expect(onActivate).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it("explains that the click will reconnect, via the accessible label", () => {
+		renderHost({ sessionState: "idle" });
+		const [button] = screen.getAllByRole("button");
+		// Enabled, but the label carries the hint (not a refusal).
+		expect((button as HTMLButtonElement).disabled).toBe(false);
+		expect(button.getAttribute("aria-label")).toContain("sends your choice");
+	});
+
+	it("shows pending while its own action is held for reconnect", () => {
+		renderHost({
+			sessionState: "connecting",
+			heldSurfaceId: "migration-scope-7f3a",
+		});
+		for (const b of screen.getAllByRole("button")) {
+			expect((b as HTMLButtonElement).disabled).toBe(true);
+		}
+	});
+
+	it("is unaffected by another surface's held action", () => {
+		renderHost({ sessionState: "connecting", heldSurfaceId: "other-surface" });
+		const [button] = screen.getAllByRole("button");
+		expect((button as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it("re-enables once a held action is released (failed reconnect)", () => {
+		// The held state lives in the queue slot, so releasing it re-enables the
+		// surface without this component observing the failure.
+		const held = renderHost({
+			sessionState: "connecting",
+			heldSurfaceId: "migration-scope-7f3a",
+		});
+		expect(
+			(held.container.querySelector("button") as HTMLButtonElement).disabled,
+		).toBe(true);
+		held.unmount();
+		const released = renderHost({
+			sessionState: "error",
+			heldSurfaceId: null,
+		});
+		expect(
+			(released.container.querySelector("button") as HTMLButtonElement)
+				.disabled,
+		).toBe(false);
 	});
 
 	it("re-enables the surface when dispatch fails (T11)", async () => {
-		const onActivate = vi.fn().mockResolvedValue(false);
+		const onActivate = vi.fn().mockResolvedValue("failed");
 		renderHost({ onActivate });
 		const [button] = screen.getAllByRole("button");
 		fireEvent.click(button);

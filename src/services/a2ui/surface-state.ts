@@ -13,6 +13,12 @@
  */
 import { extractA2uiFences } from "./fence-extractor";
 import { validateA2uiFence } from "./validator";
+import {
+	deriveA2uiTabDispatch,
+	type A2uiTabDispatchInput,
+	type A2uiTabDispatchMode,
+	type A2uiTabRefuseReason,
+} from "../../resolvers/a2ui-dispatch";
 
 /** The transcript slice this module needs — role + text only. */
 export interface TranscriptMessageLike {
@@ -79,19 +85,16 @@ function parseActionEnvelope(body: string): ParsedAction | null {
 export type A2uiSurfaceStatus = "unanswered" | "pending" | "answered";
 
 export type A2uiActionAffordanceReason =
-	| "ready"
+	| "ready" // live session — dispatches immediately
+	| "reconnect" // no live session — activation reconnects, then sends (A2UI-I08)
 	| "answered" // single-shot: this surface already submitted
 	| "pending" // dispatch in flight for this surface
 	| "superseded" // a newer surface exists — enablement tracks the conversation frontier
 	| "streaming" // the surface's own turn is still streaming (activate at turn end)
-	| "sending" // another turn is in flight
-	| "queued" // queue slot occupied — actions never queue in v0
-	| "restoring"; // session history is loading
+	// ...plus every tab-level refusal the shared resolver can return.
+	| A2uiTabRefuseReason;
 
-export interface A2uiActionAffordanceInput {
-	isSending: boolean;
-	isQueued: boolean;
-	isRestoringSession: boolean;
+export interface A2uiActionAffordanceInput extends A2uiTabDispatchInput {
 	surfaceStatus: A2uiSurfaceStatus;
 	/** True while the assistant turn containing this surface is still streaming. */
 	isStreamingTurn: boolean;
@@ -106,34 +109,42 @@ export interface A2uiActionAffordanceInput {
 export interface A2uiActionAffordance {
 	enabled: boolean;
 	reason: A2uiActionAffordanceReason;
+	/** What a click would do — mirrors the tab decision for enabled controls. */
+	mode: A2uiTabDispatchMode["kind"];
 }
 
 /**
- * D7 — the single enablement decision for surface controls. Priority order:
- * surface status (closest to the control), then turn/queue/restore state.
+ * D7 (as revised by A2UI-I08) — the single enablement decision for surface
+ * controls. Surface-scoped reasons come first (closest to the control), then
+ * the shared tab-level decision above.
  */
 export function deriveSurfaceActionAffordance(
 	input: A2uiActionAffordanceInput,
 ): A2uiActionAffordance {
-	let reason: A2uiActionAffordanceReason;
+	// Surface-scoped refusals — independent of session liveness.
+	let surfaceReason: A2uiActionAffordanceReason | null = null;
 	if (input.surfaceStatus === "answered") {
-		reason = "answered";
+		surfaceReason = "answered";
 	} else if (input.surfaceStatus === "pending") {
-		reason = "pending";
+		surfaceReason = "pending";
 	} else if (input.isSuperseded) {
-		reason = "superseded";
+		surfaceReason = "superseded";
 	} else if (input.isStreamingTurn) {
-		reason = "streaming";
-	} else if (input.isSending) {
-		reason = "sending";
-	} else if (input.isQueued) {
-		reason = "queued";
-	} else if (input.isRestoringSession) {
-		reason = "restoring";
-	} else {
-		reason = "ready";
+		surfaceReason = "streaming";
 	}
-	return { enabled: reason === "ready", reason };
+	if (surfaceReason !== null) {
+		return { enabled: false, reason: surfaceReason, mode: "refuse" };
+	}
+
+	const mode = deriveA2uiTabDispatch(input);
+	switch (mode.kind) {
+		case "sendNow":
+			return { enabled: true, reason: "ready", mode: "sendNow" };
+		case "acquireAndSend":
+			return { enabled: true, reason: "reconnect", mode: "acquireAndSend" };
+		case "refuse":
+			return { enabled: false, reason: mode.reason, mode: "refuse" };
+	}
 }
 
 /** Where a surface was first validly defined in the transcript. */

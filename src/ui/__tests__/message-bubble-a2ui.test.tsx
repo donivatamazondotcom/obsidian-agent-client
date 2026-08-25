@@ -69,7 +69,9 @@ function makeA2ui(
 		isSending: false,
 		isQueued: false,
 		isRestoringSession: false,
-		onActivate: vi.fn().mockResolvedValue(true),
+		sessionState: "ready",
+		heldSurfaceId: null,
+		onActivate: vi.fn().mockResolvedValue("sent"),
 		...overrides,
 	};
 }

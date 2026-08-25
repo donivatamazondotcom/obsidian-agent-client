@@ -111,7 +111,14 @@ export function isSteerGesture(params: {
 export function buildQueuedBanner(params: {
 	agentLabel: string;
 	isSessionReady: boolean;
+	/**
+	 * The held message is a DETACHED action from an interactive surface, not
+	 * composer text (A2UI-I08). The composer text is untouched, so the banner
+	 * must not claim it is queued.
+	 */
+	isAction?: boolean;
 }): string {
+	if (params.isAction) return t("chat.composer.queuedBannerAction");
 	return params.isSessionReady
 		? t("chat.composer.queuedBannerReady", { agent: params.agentLabel })
 		: t("chat.composer.queuedBannerWaiting");

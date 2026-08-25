@@ -5,10 +5,11 @@
  * type), so a detached send can never clobber an unsent draft — the verified
  * fireOrQueue hazard the spec's § Quick Prompts bridge documents.
  *
- * canSendNow routes through the established send-affordance resolver
- * (deriveSendAffordance + isSessionLive) with the action-specific D7
- * constraints on top: actions never queue, so a non-live session or an
- * occupied queue slot means "cannot send now" — not "queue it".
+ * Enablement routes through `deriveA2uiTabDispatch` — the SAME pure resolver
+ * the renderer composes — so an enabled control always has a dispatchable
+ * port (A2UI-I08). Actions still never queue behind a live turn, but a tab
+ * with no live session now RECONNECTS and holds the action for delivery
+ * rather than refusing it.
  */
 import { describe, expect, it, vi } from "vitest";
 import { createSessionDispatchPort } from "../session-dispatch-port";
@@ -25,12 +26,15 @@ function makeDeps(
 	}> = {},
 ): SessionDispatchPortDeps & {
 	sent: string[];
+	held: string[];
 	notices: string[];
 } {
 	const sent: string[] = [];
+	const held: string[] = [];
 	const notices: string[] = [];
 	return {
 		sent,
+		held,
 		notices,
 		lazyState: () => overrides.lazyState ?? "ready",
 		isSending: () => overrides.isSending ?? false,
@@ -41,6 +45,9 @@ function makeDeps(
 			(async (text: string) => {
 				sent.push(text);
 			}),
+		holdForAcquisition: (text: string) => {
+			held.push(text);
+		},
 		notify: (message: string) => {
 			notices.push(message);
 		},
@@ -53,7 +60,16 @@ describe("createSessionDispatchPort — canSendNow", () => {
 	});
 
 	it.each<TabSessionState>(["idle", "connecting", "error"])(
-		"is false when the session is not live (%s) — actions never lazily acquire",
+		"is TRUE when the session is not live (%s) — the click reconnects (A2UI-I08)",
+		(lazyState) => {
+			const port = createSessionDispatchPort(makeDeps({ lazyState }));
+			expect(port.canSendNow()).toBe(true);
+			expect(port.mode().kind).toBe("acquireAndSend");
+		},
+	);
+
+	it.each<TabSessionState>(["busy", "permission"])(
+		"is false while the session is live but not idle (%s)",
 		(lazyState) => {
 			expect(
 				createSessionDispatchPort(makeDeps({ lazyState })).canSendNow(),
@@ -96,14 +112,17 @@ describe("createSessionDispatchPort — sendDetached", () => {
 	it("dispatches the text through the send path and resolves true", async () => {
 		const deps = makeDeps();
 		const port = createSessionDispatchPort(deps);
-		await expect(port.sendDetached("Selected: X")).resolves.toBe(true);
+		await expect(port.sendDetached("Selected: X", "s1")).resolves.toBe("sent");
 		expect(deps.sent).toEqual(["Selected: X"]);
+		expect(deps.held).toEqual([]);
 	});
 
 	it("refuses when it cannot send now: no dispatch, notifies, resolves false", async () => {
 		const deps = makeDeps({ isQueued: true });
 		const port = createSessionDispatchPort(deps);
-		await expect(port.sendDetached("Selected: X")).resolves.toBe(false);
+		await expect(port.sendDetached("Selected: X", "s1")).resolves.toBe(
+			"refused",
+		);
 		expect(deps.sent).toEqual([]);
 		expect(deps.notices.length).toBe(1);
 	});
@@ -113,7 +132,9 @@ describe("createSessionDispatchPort — sendDetached", () => {
 			sendMessage: () => Promise.reject(new Error("session gone")),
 		});
 		const port = createSessionDispatchPort(deps);
-		await expect(port.sendDetached("Selected: X")).resolves.toBe(false);
+		await expect(port.sendDetached("Selected: X", "s1")).resolves.toBe(
+			"failed",
+		);
 	});
 
 	it("never throws on a synchronously-throwing send", async () => {
@@ -123,7 +144,7 @@ describe("createSessionDispatchPort — sendDetached", () => {
 			},
 		});
 		const port = createSessionDispatchPort(deps);
-		await expect(port.sendDetached("x")).resolves.toBe(false);
+		await expect(port.sendDetached("x", "s1")).resolves.toBe("failed");
 	});
 });
 
@@ -140,6 +161,7 @@ describe("createSessionDispatchPort — notify passthrough", () => {
 		const port = createSessionDispatchPort(makeDeps());
 		expect(Object.keys(port).sort()).toEqual([
 			"canSendNow",
+			"mode",
 			"notify",
 			"sendDetached",
 		]);

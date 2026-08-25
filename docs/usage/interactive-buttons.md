@@ -20,6 +20,8 @@ Agents learn this ability from the [Obsidian system prompt](/usage/obsidian-cont
 
 Buttons only work when the chat is ready for a new message. If a reply is still streaming, a message is already queued, or the conversation is still loading, the buttons stay off with a short tooltip explaining why. They come back as soon as the chat is idle.
 
+If the agent isn't running — right after you restart Obsidian, for example — the buttons stay clickable. Picking one starts the agent again and sends your choice as soon as it's ready, the same as typing a message would. Your draft in the message box is left alone.
+
 ## Safety
 
 The buttons are drawn entirely by Agent Console using your theme — agents can't inject their own styling, images, links, or code. A button can only ever do one thing: send a message you can see. And the label on the button is never trusted blindly — the sent message always shows the real underlying choice, so what you clicked and what was sent can't quietly differ.
