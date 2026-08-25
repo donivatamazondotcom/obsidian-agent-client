@@ -619,7 +619,7 @@ export const en = {
 	"chat.a2ui.disabledPending": "Sending your choice…",
 	"chat.a2ui.disabledAnswered": "Already answered",
 	"chat.a2ui.disabledSuperseded": "Newer choices are below",
-	"chat.a2ui.hintReconnect": "Starts the agent again and sends your choice",
+	"chat.a2ui.hintReconnect": "Connects to the agent and sends your choice",
 	"chat.a2ui.pendingReconnect": "Sending your choice when the agent is back…",
 	"chat.a2ui.inertReason":
 		"These buttons couldn't be shown safely, so the content is left as code.",

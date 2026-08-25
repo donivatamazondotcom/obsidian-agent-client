@@ -17,6 +17,9 @@ import * as React from "react";
 
 vi.mock("obsidian", () => ({
 	setIcon: vi.fn(),
+	// A2uiSurfaceHost attaches reasons via Obsidian's tooltip (never `title`),
+	// so a partial mock must carry it — the I134 caveat.
+	setTooltip: vi.fn(),
 	MarkdownRenderer: { render: vi.fn() },
 	Component: class {},
 	Platform: { isMacOS: true },

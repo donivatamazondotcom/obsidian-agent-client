@@ -14,6 +14,7 @@ import * as React from "react";
 
 vi.mock("obsidian", () => ({
 	setIcon: vi.fn(),
+	setTooltip: vi.fn(),
 	MarkdownRenderer: { render: vi.fn() },
 	Component: class {},
 	// platform.ts reads Platform at import time (I134 caveat for ad-hoc mocks).
@@ -32,6 +33,7 @@ vi.mock("../shared/MarkdownRenderer", async () => {
 
 afterEach(cleanup);
 
+import { setTooltip } from "obsidian";
 import { A2uiSurfaceHost } from "../A2uiSurfaceHost";
 import type { A2uiDispatchOutcome } from "../../services/session-dispatch-port";
 import { initializeLogger } from "../../utils/logger";
@@ -117,7 +119,14 @@ describe("A2uiSurfaceHost — valid surface (T01)", () => {
 		renderHost({ isStreamingTurn: true });
 		for (const b of screen.getAllByRole("button")) {
 			expect((b as HTMLButtonElement).disabled).toBe(true);
-			expect(b.getAttribute("aria-label")).toBeTruthy();
+			// The reason rides Obsidian's own tooltip mechanism.
+			expect(setTooltip).toHaveBeenCalledWith(
+				b,
+				expect.stringContaining("Available when this reply finishes"),
+			);
+			// ...and NEVER the `title` attribute, which would render a second,
+			// OS-native tooltip beside Obsidian's (smoke finding 2026-08-25).
+			expect(b.getAttribute("title")).toBeNull();
 		}
 	});
 
@@ -177,12 +186,37 @@ describe("A2uiSurfaceHost — activation (T02/T03)", () => {
 		},
 	);
 
-	it("explains that the click will reconnect, via the accessible label", () => {
+	it("explains that the click will reconnect, via Obsidian's tooltip only", () => {
 		renderHost({ sessionState: "idle" });
 		const [button] = screen.getAllByRole("button");
-		// Enabled, but the label carries the hint (not a refusal).
+		// Enabled, but a hint is attached (not a refusal).
 		expect((button as HTMLButtonElement).disabled).toBe(false);
-		expect(button.getAttribute("aria-label")).toContain("sends your choice");
+		expect(setTooltip).toHaveBeenCalledWith(
+			button,
+			expect.stringContaining("sends your choice"),
+		);
+		// Exactly ONE tooltip mechanism — no native `title` duplicate.
+		expect(button.getAttribute("title")).toBeNull();
+	});
+
+	it("attaches no tooltip at all when the control is simply ready", () => {
+		renderHost({ sessionState: "ready" });
+		const [button] = screen.getAllByRole("button");
+		expect((button as HTMLButtonElement).disabled).toBe(false);
+		expect(button.getAttribute("title")).toBeNull();
+		expect(button.getAttribute("aria-label")).toBeNull();
+	});
+
+	// setTooltip's mechanism IS aria-label (verified against the running app),
+	// so the tooltip text doubles as the accessible name. It must keep the
+	// visible label or the button announces only its reason — WCAG 2.5.3.
+	it("keeps the visible label in the accessible name (label-in-name)", () => {
+		renderHost({ sessionState: "idle" });
+		const [button] = screen.getAllByRole("button");
+		expect(setTooltip).toHaveBeenCalledWith(
+			button,
+			expect.stringContaining("Minimal migration"),
+		);
 	});
 
 	it("shows pending while its own action is held for reconnect", () => {
@@ -239,7 +273,11 @@ describe("A2uiSurfaceHost — superseded surfaces", () => {
 		renderHost({ isLatestDefinition: () => false });
 		for (const b of screen.getAllByRole("button")) {
 			expect((b as HTMLButtonElement).disabled).toBe(true);
-			expect(b.getAttribute("aria-label")).toContain("Newer choices");
+			expect(setTooltip).toHaveBeenCalledWith(
+				b,
+				expect.stringContaining("Newer choices"),
+			);
+			expect(b.getAttribute("title")).toBeNull();
 		}
 	});
 

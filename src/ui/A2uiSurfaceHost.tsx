@@ -20,6 +20,7 @@
  */
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { setTooltip } from "obsidian";
 import type AgentClientPlugin from "../plugin";
 import { validateA2uiFence } from "../services/a2ui/validator";
 import { getLogger } from "../utils/logger";
@@ -233,12 +234,27 @@ export function A2uiSurfaceHost(props: A2uiSurfaceHostProps): React.JSX.Element 
 						key={id}
 						className={className}
 						disabled={disabled}
-						aria-label={
-							reason !== undefined
-								? `${component.label} — ${reason}`
-								: undefined
-						}
-						title={reason}
+						// Obsidian's own tooltip — NOT the `title` attribute,
+						// which renders a SECOND, OS-native tooltip alongside it
+						// (smoke finding, 2026-08-25). setTooltip is the
+						// sanctioned mechanism and is what the rest of the UI
+						// uses (ChatHeader, PermissionBanner, SessionHistoryModal).
+						// It also sets the accessible label, so no aria-label here.
+						ref={(el) => {
+							if (el === null) return;
+							if (reason !== undefined) {
+								// setTooltip's mechanism IS aria-label (verified
+								// against the running app), so the text must keep
+								// the visible label or the accessible name loses
+								// it — WCAG 2.5.3 label-in-name.
+								setTooltip(el, `${component.label} — ${reason}`);
+								return;
+							}
+							// Live + idle: nothing to explain. Clear any tooltip
+							// a previous state left behind.
+							el.removeAttribute("aria-label");
+							el.removeAttribute("data-tooltip");
+						}}
 						onClick={() => handleActivate(component)}
 					>
 						{component.label}
