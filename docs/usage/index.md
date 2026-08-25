@@ -93,3 +93,15 @@ The header **↻ Reload** button reloads the current session under a fresh agent
 ## Stopping Generation
 
 If the agent is generating a response and you want to stop it, click the **Stop** button that appears during generation.
+
+## Reduced Motion
+
+Want a calmer interface? Agent Console follows your system's reduced-motion setting.
+
+Turn it on and three things stop moving: the spinning tab icon, the dots that show the agent is working, and the reload spinner. You can still tell when the agent is busy. The dots simply hold steady in the accent color instead of pulsing.
+
+Where the setting lives:
+
+- **macOS** — System Settings → Accessibility → Display → Reduce motion. Newer versions list it under Accessibility → Motion.
+- **Windows** — Settings → Accessibility → Visual effects → Animation effects.
+- **Linux** — your desktop environment's animation setting.

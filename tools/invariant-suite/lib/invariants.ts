@@ -499,6 +499,117 @@ const a2uiButtonLabelContainment: Invariant = {
 	},
 };
 
+/**
+ * INV-8 — Idle loading indicator runs no animations.
+ *
+ * `.agent-client-loading-indicator` is hidden between turns with
+ * `visibility: hidden`, which keeps its reserved layout box but does NOT
+ * suspend CSS animations in Chromium (only `display: none` does). Before the
+ * I198 fix the nine `dotPulse` dots therefore animated continuously for the
+ * whole life of every open chat view, idle or not, pinning the compositor at
+ * the display refresh rate (measured 120 fps sustained on ProMotion, surfaced
+ * by macOS as "Using Significant Energy").
+ *
+ * jsdom cannot see this: it applies no stylesheets and runs no animations. So
+ * the assertion has to happen against real rendered animations in a running
+ * Obsidian. Also asserts a reduced-motion opt-out exists.
+ *
+ * Anti-vacuity: a VISIBLE replica must animate all nine dots. Without that
+ * check, a zero for the hidden replica would also be produced by missing
+ * keyframes or an unloaded stylesheet — passing for the wrong reason.
+ */
+const idleIndicatorNotAnimating: Invariant = {
+	id: "INV-8",
+	name: "Idle loading indicator runs no animations",
+	guards: "hidden-indicator animation class (I198)",
+	async run(cdp) {
+		const r = await evalJson<{
+			ruleFound: boolean;
+			reducedMotionFound: boolean;
+			hiddenRunning: number;
+			visibleRunning: number;
+			dots: number;
+		}>(
+			cdp,
+			`const build = (hidden) => {
+				const host = document.createElement("div");
+				host.style.cssText = "position:fixed;left:-9999px;top:0;width:400px";
+				document.body.appendChild(host);
+				try {
+					const ind = document.createElement("div");
+					ind.className = "agent-client-loading-indicator" + (hidden ? " agent-client-hidden" : "");
+					const wrap = document.createElement("div");
+					wrap.className = "agent-client-loading-dots";
+					for (let i = 0; i < 9; i++) {
+						const d = document.createElement("div");
+						d.className = "agent-client-loading-dot";
+						wrap.appendChild(d);
+					}
+					ind.appendChild(wrap);
+					host.appendChild(ind);
+					const all = Array.from(wrap.querySelectorAll(".agent-client-loading-dot"));
+					let running = 0;
+					for (const d of all) {
+						running += d.getAnimations().filter((a) => a.playState === "running").length;
+					}
+					return { running, count: all.length };
+				} finally {
+					host.remove();
+				}
+			 };
+			 let ruleFound = false;
+			 let reducedMotionFound = false;
+			 for (const sheet of Array.from(document.styleSheets)) {
+				try {
+					for (const rule of Array.from(sheet.cssRules)) {
+						if (rule.selectorText === ".agent-client-loading-dot") ruleFound = true;
+						if (String(rule.cssText || "").indexOf("prefers-reduced-motion") >= 0) reducedMotionFound = true;
+					}
+				} catch (e) { /* cross-origin sheet; ignore */ }
+			 }
+			 const hidden = build(true);
+			 const visible = build(false);
+			 return {
+				ruleFound,
+				reducedMotionFound,
+				hiddenRunning: hidden.running,
+				visibleRunning: visible.running,
+				dots: visible.count,
+			 };`,
+		);
+		if (!r.ruleFound) {
+			return {
+				status: "fail",
+				detail:
+					"the .agent-client-loading-dot rule is not in any loaded stylesheet — plugin CSS did not load (a CSS change needs a FULL window reload, not plugin:reload)",
+			};
+		}
+		if (r.visibleRunning !== r.dots) {
+			return {
+				status: "fail",
+				detail: `visible indicator ran ${r.visibleRunning}/${r.dots} dot animations — probe cannot tell a fix from absent keyframes`,
+			};
+		}
+		if (r.hiddenRunning !== 0) {
+			return {
+				status: "fail",
+				detail: `hidden indicator still runs ${r.hiddenRunning} animation(s) — visibility:hidden does not suspend animations, so the dots animate for the life of the view`,
+			};
+		}
+		if (!r.reducedMotionFound) {
+			return {
+				status: "fail",
+				detail:
+					"no @media (prefers-reduced-motion: reduce) block in any loaded stylesheet — the infinite animations have no opt-out",
+			};
+		}
+		return {
+			status: "pass",
+			detail: `hidden 0 running; visible ${r.visibleRunning}/${r.dots} running; reduced-motion opt-out present`,
+		};
+	},
+};
+
 /** Chat view must exist before DOM probes run. */
 export async function ensureChatViewOpen(cdp: Cdp): Promise<void> {
 	const count = await cdp.evaluate<number>(
@@ -518,4 +629,5 @@ export const invariants: Invariant[] = [
 	notificationRouting,
 	quickPromptLabels,
 	a2uiButtonLabelContainment,
+	idleIndicatorNotAnimating,
 ];
