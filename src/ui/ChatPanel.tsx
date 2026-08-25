@@ -2906,6 +2906,10 @@ export function ChatPanel({
 			// Queue Next Message (#82)
 			isStreaming={isSending}
 			isQueued={queue.isQueued}
+			// A held DETACHED action (surface click while offline) is not
+			// composer text: the banner must not claim the draft is queued, and
+			// Delete must not be offered (it emits clearComposer — A2UI-I08).
+			isQueuedAction={queue.pending?.detachedSurfaceId !== undefined}
 			onQueueMessage={handleQueueMessage}
 			onEditQueued={handleEditQueued}
 			onDeleteQueued={handleDeleteQueued}
