@@ -48,6 +48,17 @@ If your plugin does not need CSS, delete this file.
 	visibility: hidden;
 }
 
+/* visibility:hidden preserves the reserved box but does NOT suspend CSS
+   animations in Chromium (only display:none does), so without this the nine
+   dotPulse dots animate for the entire life of every open chat view — idle or
+   not — pinning the compositor at the display refresh rate. Stopping the
+   animation here keeps the reserved geometry (no layout jump when a turn
+   starts) while costing nothing between turns. Guarded by INV-8 and
+   src/__tests__/styles-animation-gating.test.ts (I198). */
+.agent-client-loading-indicator.agent-client-hidden .agent-client-loading-dot {
+	animation: none;
+}
+
 .agent-client-loading-status {
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
@@ -3627,5 +3638,27 @@ button.agent-client-message-tool-call-summary:focus-visible {
 @media (hover: hover) {
 	.agent-client-settings-group .setting-item.mod-navigable:hover {
 		background-color: var(--background-modifier-hover);
+	}
+}
+
+/* ===== Reduced motion (I198) =====
+   The stylesheet had no prefers-reduced-motion handling at all, so every
+   infinite animation ran unconditionally — an accessibility gap (WCAG 2.3.3)
+   that also denied motion-sensitive users any way to avoid the sustained
+   compositing cost. Kept as ONE block listing every animated selector so the
+   coverage guard in src/__tests__/styles-animation-gating.test.ts fails when a
+   new animation is added without an opt-out. */
+@media (prefers-reduced-motion: reduce) {
+	.agent-client-loading-dot,
+	.agent-client-tab-state-busy,
+	.agent-client-tab-state-permission,
+	.agent-client-reload-spinning svg {
+		animation: none;
+	}
+
+	/* Without the pulse the dots would read as idle grey; hold them at the
+	   accent colour so "working" is still legible without motion. */
+	.agent-client-loading-dot {
+		background-color: var(--interactive-accent);
 	}
 }
