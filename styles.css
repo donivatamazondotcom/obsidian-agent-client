@@ -1336,15 +1336,23 @@ button.agent-client-message-tool-call-summary:focus-visible {
 	display: none;
 }
 
-.agent-client-chat-input-textarea:hover {
-	border: none;
+/* Obsidian core (app.css) styles every <textarea> as a form field, and its hover
+ * rule -- `textarea:not(:disabled):hover`, inside @media (hover: hover) -- scores
+ * (0,2,1), because `:not(:disabled)` contributes its argument's specificity. That
+ * outranks a plain `.class:hover` (0,2,0), so the composer textarea was repainted
+ * with --background-modifier-form-field-hover on hover. Being a child of
+ * .agent-client-chat-input-box, that fill also covered the locked state's inset
+ * accent bar. The container owns its own border and background, so the textarea
+ * stays a transparent inset in every state. Element+class qualified to clear
+ * (0,2,1) without !important, and still overridable by a theme. (I201) */
+.agent-client-chat-input-box textarea.agent-client-chat-input-textarea:hover,
+.agent-client-chat-input-box textarea.agent-client-chat-input-textarea:focus,
+.agent-client-chat-input-box textarea.agent-client-chat-input-textarea:focus-visible,
+.agent-client-chat-input-box textarea.agent-client-chat-input-textarea:active {
 	background-color: transparent;
-}
-
-.agent-client-chat-input-textarea:focus {
 	border: none;
-	outline: none;
 	box-shadow: none;
+	outline: none;
 }
 
 /* Dynamic textarea height management */
@@ -1502,7 +1510,6 @@ button.agent-client-message-tool-call-summary:focus-visible {
 	width: 20px;
 	height: 20px;
 	padding: 0;
-	transition: all 0.2s ease;
 }
 
 .agent-client-chat-send-button.agent-client-disabled {
