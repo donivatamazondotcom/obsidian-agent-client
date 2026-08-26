@@ -71,6 +71,7 @@ describe("deriveSurfaceAnswers", () => {
 
 describe("deriveSurfaceActionAffordance (D7)", () => {
 	const IDLE = {
+		sessionState: "ready" as const,
 		isSending: false,
 		isQueued: false,
 		isRestoringSession: false,
@@ -83,6 +84,7 @@ describe("deriveSurfaceActionAffordance (D7)", () => {
 		expect(deriveSurfaceActionAffordance(IDLE)).toEqual({
 			enabled: true,
 			reason: "ready",
+			mode: "sendNow",
 		});
 	});
 
@@ -98,37 +100,37 @@ describe("deriveSurfaceActionAffordance (D7)", () => {
 	it("disables while any turn is in flight (T04a)", () => {
 		expect(
 			deriveSurfaceActionAffordance({ ...IDLE, isSending: true }),
-		).toEqual({ enabled: false, reason: "sending" });
+		).toEqual({ enabled: false, reason: "sending", mode: "refuse" });
 	});
 
 	it("disables while a message is queued — actions never queue (T04b)", () => {
 		expect(deriveSurfaceActionAffordance({ ...IDLE, isQueued: true })).toEqual(
-			{ enabled: false, reason: "queued" },
+			{ enabled: false, reason: "queued", mode: "refuse" },
 		);
 	});
 
 	it("disables while restoring session history", () => {
 		expect(
 			deriveSurfaceActionAffordance({ ...IDLE, isRestoringSession: true }),
-		).toEqual({ enabled: false, reason: "restoring" });
+		).toEqual({ enabled: false, reason: "restoring", mode: "refuse" });
 	});
 
 	it("disables an answered surface (single-shot; T04 second activation impossible)", () => {
 		expect(
 			deriveSurfaceActionAffordance({ ...IDLE, surfaceStatus: "answered" }),
-		).toEqual({ enabled: false, reason: "answered" });
+		).toEqual({ enabled: false, reason: "answered", mode: "refuse" });
 	});
 
 	it("disables a pending surface (dispatch in flight)", () => {
 		expect(
 			deriveSurfaceActionAffordance({ ...IDLE, surfaceStatus: "pending" }),
-		).toEqual({ enabled: false, reason: "pending" });
+		).toEqual({ enabled: false, reason: "pending", mode: "refuse" });
 	});
 
 	it("disables an earlier unanswered surface once a newer one exists (superseded)", () => {
 		expect(
 			deriveSurfaceActionAffordance({ ...IDLE, isSuperseded: true }),
-		).toEqual({ enabled: false, reason: "superseded" });
+		).toEqual({ enabled: false, reason: "superseded", mode: "refuse" });
 	});
 
 	it("answered outranks superseded (an answered old surface keeps its answered look)", () => {

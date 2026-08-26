@@ -20,6 +20,7 @@
  */
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
+import { setTooltip } from "obsidian";
 import type AgentClientPlugin from "../plugin";
 import { validateA2uiFence } from "../services/a2ui/validator";
 import { getLogger } from "../utils/logger";
@@ -30,6 +31,8 @@ import {
 } from "../services/a2ui/surface-state";
 import type { A2uiValidatedSurface } from "../services/a2ui/types";
 import type { A2uiButton } from "../services/a2ui/action";
+import type { A2uiDispatchOutcome } from "../services/session-dispatch-port";
+import type { TabSessionState } from "../types/tab";
 import { MarkdownRenderer } from "./shared/MarkdownRenderer";
 import { t, type TranslationKey } from "../i18n";
 
@@ -61,23 +64,34 @@ export interface A2uiSurfaceHostProps {
 	isRestoringSession: boolean;
 	/** The assistant turn containing this surface is still streaming. */
 	isStreamingTurn: boolean;
+	/** Per-tab session lifecycle state (drives the reconnect-on-click path). */
+	sessionState: TabSessionState;
 	/**
-	 * Dispatch the activation (build envelope + detached send). Resolves true
-	 * on success; false re-enables the surface (T11).
+	 * surfaceId of an action currently HELD for reconnect (A2UI-I08), or null.
+	 * Owned by the queue slot rather than this component, so if reconnecting
+	 * fails and the slot is released, the surface re-enables on its own.
+	 */
+	heldSurfaceId?: string | null;
+	/**
+	 * Dispatch the activation (build envelope + detached send). The outcome
+	 * drives the pending lifecycle: `sent` stays pending until the answer
+	 * arrives in the transcript, `held` hands pending to the queue, and
+	 * `refused`/`failed` re-enable the surface (T11).
 	 */
 	onActivate: (
 		surface: A2uiValidatedSurface,
 		button: A2uiButton,
-	) => Promise<boolean>;
+	) => Promise<A2uiDispatchOutcome>;
 }
 
 /** Plain-language disabled reasons (user-facing copy rule: no jargon). */
 const DISABLED_COPY_KEYS: Record<
-	Exclude<A2uiActionAffordanceReason, "ready">,
+	Exclude<A2uiActionAffordanceReason, "ready" | "reconnect">,
 	TranslationKey
 > = {
 	streaming: "chat.a2ui.disabledStreaming",
 	sending: "chat.a2ui.disabledSending",
+	permission: "chat.a2ui.disabledPermission",
 	queued: "chat.a2ui.disabledQueued",
 	restoring: "chat.a2ui.disabledRestoring",
 	pending: "chat.a2ui.disabledPending",
@@ -126,13 +140,24 @@ export function A2uiSurfaceHost(props: A2uiSurfaceHostProps): React.JSX.Element 
 	}
 	const surface = validation.surface;
 
+	// Pending covers the dispatch window. It comes from two places: local state
+	// (the same-tick dispatch) and the queue slot (an action held while the
+	// agent reconnects — A2UI-I08). Sourcing the held case from the slot means a
+	// failed reconnect releases it and the surface re-enables without this
+	// component having to observe the failure.
+	const heldHere =
+		props.heldSurfaceId !== undefined &&
+		props.heldSurfaceId !== null &&
+		props.heldSurfaceId === surface.surfaceId;
+
 	const status: A2uiSurfaceStatus =
 		answeredComponentId !== null
 			? "answered"
-			: pending
+			: pending || heldHere
 				? "pending"
 				: "unanswered";
 	const affordance = deriveSurfaceActionAffordance({
+		sessionState: props.sessionState,
 		isSending: props.isSending,
 		isQueued: props.isQueued,
 		isRestoringSession: props.isRestoringSession,
@@ -146,11 +171,13 @@ export function A2uiSurfaceHost(props: A2uiSurfaceHostProps): React.JSX.Element 
 	const handleActivate = (button: A2uiButton): void => {
 		if (!affordance.enabled) return;
 		setPending(true);
-		void props.onActivate(surface, button).then((sent) => {
-			// On success, stay pending — the answered state arrives from the
-			// transcript (the sent user message) and supersedes it. On
-			// failure, re-enable (T11).
-			if (!sent) setPending(false);
+		void props.onActivate(surface, button).then((outcome) => {
+			// sent  → stay pending; the answered state arrives from the
+			//         transcript (the sent user message) and supersedes it.
+			// held  → the queue slot now owns pending (heldSurfaceId), so drop
+			//         the local flag and let that derived signal drive it.
+			// else  → refused/failed: re-enable (T11).
+			if (outcome !== "sent") setPending(false);
 		});
 	};
 
@@ -183,10 +210,16 @@ export function A2uiSurfaceHost(props: A2uiSurfaceHostProps): React.JSX.Element 
 			case "button": {
 				const isChosen = answeredComponentId === component.id;
 				const disabled = !affordance.enabled;
+				// "ready" needs no explanation. "reconnect" is ENABLED — the
+				// copy is a hint about what the click will do, not a refusal.
 				const reason =
 					affordance.reason === "ready"
 						? undefined
-						: t(DISABLED_COPY_KEYS[affordance.reason]);
+						: affordance.reason === "reconnect"
+							? t("chat.a2ui.hintReconnect")
+							: heldHere && affordance.reason === "pending"
+								? t("chat.a2ui.pendingReconnect")
+								: t(DISABLED_COPY_KEYS[affordance.reason]);
 				const className = [
 					"agent-client-a2ui-button",
 					isChosen ? "agent-client-a2ui-button-chosen mod-cta" : "",
@@ -201,12 +234,27 @@ export function A2uiSurfaceHost(props: A2uiSurfaceHostProps): React.JSX.Element 
 						key={id}
 						className={className}
 						disabled={disabled}
-						aria-label={
-							reason !== undefined
-								? `${component.label} — ${reason}`
-								: undefined
-						}
-						title={reason}
+						// Obsidian's own tooltip — NOT the `title` attribute,
+						// which renders a SECOND, OS-native tooltip alongside it
+						// (smoke finding, 2026-08-25). setTooltip is the
+						// sanctioned mechanism and is what the rest of the UI
+						// uses (ChatHeader, PermissionBanner, SessionHistoryModal).
+						// It also sets the accessible label, so no aria-label here.
+						ref={(el) => {
+							if (el === null) return;
+							if (reason !== undefined) {
+								// setTooltip's mechanism IS aria-label (verified
+								// against the running app), so the text must keep
+								// the visible label or the accessible name loses
+								// it — WCAG 2.5.3 label-in-name.
+								setTooltip(el, `${component.label} — ${reason}`);
+								return;
+							}
+							// Live + idle: nothing to explain. Clear any tooltip
+							// a previous state left behind.
+							el.removeAttribute("aria-label");
+							el.removeAttribute("data-tooltip");
+						}}
 						onClick={() => handleActivate(component)}
 					>
 						{component.label}

@@ -245,6 +245,12 @@ export interface InputAreaProps {
 	isStreaming?: boolean;
 	/** Whether a message is queued (locks the composer + shows the queued banner). */
 	isQueued?: boolean;
+	/**
+	 * The queued message is a DETACHED action from an interactive surface, not
+	 * composer text (A2UI-I08). Changes the banner copy and replaces
+	 * Edit/Delete with a Cancel that never touches the composer.
+	 */
+	isQueuedAction?: boolean;
 	/** Queue the composer's current content (Enter while streaming). */
 	onQueueMessage?: (content: string, attachments?: AttachedFile[]) => void;
 	/** Unlock the composer to edit the queued message (keeps the text). */
@@ -357,6 +363,7 @@ export function InputArea({
 	onRestoredMessageConsumed,
 	isStreaming = false,
 	isQueued = false,
+	isQueuedAction = false,
 	onQueueMessage,
 	onEditQueued,
 	onDeleteQueued,
@@ -1579,23 +1586,43 @@ export function InputArea({
 							}}
 						/>
 						<span className="agent-client-queued-banner-text">
-							{buildQueuedBanner({ agentLabel, isSessionReady })}
+							{buildQueuedBanner({
+								agentLabel,
+								isSessionReady,
+								isAction: isQueuedAction,
+							})}
 						</span>
 						<div className="agent-client-queued-banner-actions">
-							<button
-								type="button"
-								className="agent-client-queued-edit"
-								onClick={() => onEditQueued?.()}
-							>
-								{t("chat.composer.edit")}
-							</button>
-							<button
-								type="button"
-								className="agent-client-queued-delete"
-								onClick={() => onDeleteQueued?.()}
-							>
-								{t("chat.composer.delete")}
-							</button>
+							{isQueuedAction ? (
+								// A held ACTION is not composer text: Delete would
+								// emit clearComposer and wipe an unrelated draft
+								// (A2UI-I08). Offer only Cancel, which releases the
+								// slot and leaves the composer untouched.
+								<button
+									type="button"
+									className="agent-client-queued-edit"
+									onClick={() => onEditQueued?.()}
+								>
+									{t("modals.common.cancel")}
+								</button>
+							) : (
+								<>
+									<button
+										type="button"
+										className="agent-client-queued-edit"
+										onClick={() => onEditQueued?.()}
+									>
+										{t("chat.composer.edit")}
+									</button>
+									<button
+										type="button"
+										className="agent-client-queued-delete"
+										onClick={() => onDeleteQueued?.()}
+									>
+										{t("chat.composer.delete")}
+									</button>
+								</>
+							)}
 						</div>
 					</div>
 				)}

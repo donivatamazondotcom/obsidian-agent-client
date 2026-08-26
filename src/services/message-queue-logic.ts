@@ -111,7 +111,14 @@ export function isSteerGesture(params: {
 export function buildQueuedBanner(params: {
 	agentLabel: string;
 	isSessionReady: boolean;
+	/**
+	 * The held message is a DETACHED action from an interactive surface, not
+	 * composer text (A2UI-I08). The composer text is untouched, so the banner
+	 * must not claim it is queued.
+	 */
+	isAction?: boolean;
 }): string {
+	if (params.isAction) return t("chat.composer.queuedBannerAction");
 	return params.isSessionReady
 		? t("chat.composer.queuedBannerReady", { agent: params.agentLabel })
 		: t("chat.composer.queuedBannerWaiting");
@@ -340,6 +347,22 @@ export interface ConnectFlushInput {
 export interface ConnectFlushDecision {
 	/** Dispatch `acquisitionComplete` to the queue reducer now. */
 	dispatchAcquisitionComplete: boolean;
+	/**
+	 * Dispatch `acquisitionFailed` now — the (connecting|idle)->error edge.
+	 *
+	 * A2UI-I08: without this the reducer's `acquisitionFailed` branch was dead
+	 * code (declared, handled, never dispatched). Harmless while only composer
+	 * text could be held — a failed acquisition holds the message and the user
+	 * still has their text plus Edit/Delete. But a held detached ACTION has no
+	 * composer text to retry from, so nothing released the slot: the surface
+	 * stayed pending and the composer's send stayed blocked, with the banner's
+	 * escape hatch suppressed. Found by driving a failed reconnect live.
+	 *
+	 * Scoped to the acquisition edge on purpose: `busy->error` is a turn that
+	 * errored, and dispatching there would drop a message queued behind a live
+	 * turn (the hold-on-error contract, Decision 5).
+	 */
+	dispatchAcquisitionFailed: boolean;
 	/** Next value of the caller's awaiting-sessionId ref. */
 	awaitingSessionId: boolean;
 }
@@ -353,7 +376,16 @@ export function decideConnectFlush(
 	// busy, error, or back to idle). This is what keeps us disjoint from the
 	// turn-end flush: leaving `ready` always resets the flag.
 	if (state !== "ready") {
-		return { dispatchAcquisitionComplete: false, awaitingSessionId: false };
+		// Acquisition itself failed (never reached `ready`). Report it so the
+		// reducer can release a held detached action; a held composer message
+		// still holds, per Decision 5.
+		const acquisitionFailedEdge =
+			state === "error" && (prevState === "connecting" || prevState === "idle");
+		return {
+			dispatchAcquisitionComplete: false,
+			dispatchAcquisitionFailed: acquisitionFailedEdge,
+			awaitingSessionId: false,
+		};
 	}
 
 	const acquisitionEdge =
@@ -363,17 +395,33 @@ export function decideConnectFlush(
 		// Acquisition just completed. Flush now if the sessionId is committed;
 		// otherwise wait for it (it commits a render later on the load path).
 		return hasSessionId
-			? { dispatchAcquisitionComplete: true, awaitingSessionId: false }
-			: { dispatchAcquisitionComplete: false, awaitingSessionId: true };
+			? {
+					dispatchAcquisitionComplete: true,
+					dispatchAcquisitionFailed: false,
+					awaitingSessionId: false,
+				}
+			: {
+					dispatchAcquisitionComplete: false,
+					dispatchAcquisitionFailed: false,
+					awaitingSessionId: true,
+				};
 	}
 
 	// Already `ready`, no fresh acquisition edge. Deliver iff we were waiting on
 	// the sessionId from a prior acquisition edge and it has now committed.
 	if (awaitingSessionId && hasSessionId) {
-		return { dispatchAcquisitionComplete: true, awaitingSessionId: false };
+		return {
+			dispatchAcquisitionComplete: true,
+			dispatchAcquisitionFailed: false,
+			awaitingSessionId: false,
+		};
 	}
 
-	return { dispatchAcquisitionComplete: false, awaitingSessionId };
+	return {
+		dispatchAcquisitionComplete: false,
+		dispatchAcquisitionFailed: false,
+		awaitingSessionId,
+	};
 }
 
 /**

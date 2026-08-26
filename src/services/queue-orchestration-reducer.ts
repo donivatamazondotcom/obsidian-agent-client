@@ -186,6 +186,15 @@ function enqueue(
 
 /** Consume the slot and emit the clear+flush effects, in that order. */
 function flush(pending: QueuedMessage): QueueReducerResult {
+	// A DETACHED send (A2UI surface action) is not composer text, so clearing
+	// the composer would wipe an unrelated unsent draft — the exact hazard the
+	// detached-send port exists to avoid (D8). Flush it alone.
+	if (pending.detachedSurfaceId !== undefined) {
+		return {
+			state: { pending: null },
+			effects: [{ kind: "flushDispatch", message: pending }],
+		};
+	}
 	return {
 		state: { pending: null },
 		// clearComposer BEFORE flushDispatch so the emptied composer is what
@@ -294,6 +303,14 @@ export function queueOrchestrationReducer(
 		}
 
 		case "acquisitionFailed":
+			// A DETACHED send (A2UI surface action) has no composer text to
+			// retry from, so holding it would strand the originating surface as
+			// pending AND keep the composer's send blocked, with no Edit/Delete
+			// banner to escape through. Release the slot: the surface re-enables
+			// and the user can click again (A2UI-I08).
+			if (state.pending?.detachedSurfaceId !== undefined) {
+				return { state: { pending: null }, effects: NO_EFFECTS };
+			}
 			// Hold: composer text is intact; user re-sends to retry.
 			return { state, effects: NO_EFFECTS };
 

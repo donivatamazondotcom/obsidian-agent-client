@@ -15,7 +15,10 @@
  * Pure over injected seams (port, clock, refocus effect) — unit-testable
  * against a never-resolving send, which is the precise failure shape.
  */
-import type { SessionDispatchPort } from "../session-dispatch-port";
+import type {
+	A2uiDispatchOutcome,
+	SessionDispatchPort,
+} from "../session-dispatch-port";
 import { buildA2uiActionUserMessage, type A2uiButton } from "./action";
 
 export interface ActivateA2uiButtonInput {
@@ -30,7 +33,7 @@ export interface ActivateA2uiButtonInput {
 
 export function activateA2uiButton(
 	input: ActivateA2uiButtonInput,
-): Promise<boolean> {
+): Promise<A2uiDispatchOutcome> {
 	const message = buildA2uiActionUserMessage({
 		surfaceId: input.surfaceId,
 		button: input.button,
@@ -39,10 +42,11 @@ export function activateA2uiButton(
 	// Same-tick read: the port's own internal gate sees the same state, so
 	// this check and the dispatch below cannot disagree.
 	const willDispatch = input.port.canSendNow();
-	const result = input.port.sendDetached(message);
+	const result = input.port.sendDetached(message, input.surfaceId);
 	// Dispatch-time refocus: the send promise resolves at TURN END, so the
 	// caret must come back now, while the reply streams. A refused activation
-	// (port notifies + resolves false) doesn't steal focus.
+	// (port notifies + resolves "refused") doesn't steal focus. An action held
+	// for reconnect DID take effect, so it refocuses like a live dispatch.
 	if (willDispatch) input.refocusComposer();
 	return result;
 }

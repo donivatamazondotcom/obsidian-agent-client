@@ -1534,6 +1534,13 @@ export function ChatPanel({
 		if (decision.dispatchAcquisitionComplete) {
 			queue.dispatch({ type: "acquisitionComplete", hasSessionId: true });
 		}
+		// A2UI-I08: acquisition failed outright. The reducer releases a held
+		// detached action (a surface click has no composer text to retry from,
+		// so holding it would strand the surface pending with the composer
+		// blocked); a held composer message still holds per Decision 5.
+		if (decision.dispatchAcquisitionFailed) {
+			queue.dispatch({ type: "acquisitionFailed" });
+		}
 	}, [lazySession.state, agent.session.sessionId, queue.dispatch]);
 
 	// Send wrapper: ready → handleSendMessage directly. Not-ready → enqueue the
@@ -2659,8 +2666,12 @@ export function ChatPanel({
 	// ============================================================
 	// Detached send seam (D8): reads live tab state through the same refs the
 	// quick-prompt bridge uses, but has NO composer thunks — an action send
-	// can never clobber an unsent draft. Never queues (D7): canSendNow gates
-	// on ready+idle, and refused sends re-enable the surface.
+	// can never clobber an unsent draft. Enablement is decided by the shared
+	// resolver (deriveA2uiTabDispatch), so the rendered control and this port
+	// can never disagree (A2UI-I08). On a tab with no live session the action
+	// is HELD in the queue-of-one and delivered by the connect-flush, exactly
+	// as a composer send on an idle tab — flagged detached so the flush skips
+	// the composer clear.
 	const a2uiDispatchPort = useMemo(
 		() =>
 			createSessionDispatchPort({
@@ -2669,11 +2680,18 @@ export function ChatPanel({
 				isQueued: () => isQueuedRef.current,
 				isRestoringSession: () => sessionHistoryLoadingRef.current,
 				sendMessage: (text) => handleSendMessageRef.current(text, undefined),
+				holdForAcquisition: (text, surfaceId) => {
+					queue.dispatch({
+						type: "sendWhilePreReady",
+						message: { content: text, detachedSurfaceId: surfaceId },
+					});
+				},
 				notify: (message) => {
 					new Notice(t("notices.prefixed", { message }));
 				},
 			}),
-		[],
+		// queue.dispatch is a stable useCallback (handlers read through a ref).
+		[queue.dispatch],
 	);
 
 	// Transcript projection for the pure surface-state resolvers (role + text).
@@ -2746,6 +2764,10 @@ export function ChatPanel({
 			isSending,
 			isQueued: queue.isQueued,
 			isRestoringSession: sessionHistory.loading,
+			sessionState: lazySession.state,
+			// An action held for reconnect owns the surface's pending state, so
+			// a released slot (failed reconnect) re-enables it (A2UI-I08).
+			heldSurfaceId: queue.pending?.detachedSurfaceId ?? null,
 			// Refocus fires at DISPATCH inside the orchestrator — never awaited
 			// behind the send promise, which resolves only at turn end (the
 			// I173 class; round-1 awaited it and the caret came back minutes
@@ -2765,6 +2787,8 @@ export function ChatPanel({
 			a2uiDefinitions,
 			isSending,
 			queue.isQueued,
+			queue.pending,
+			lazySession.state,
 			sessionHistory.loading,
 			a2uiDispatchPort,
 		],
@@ -2889,6 +2913,10 @@ export function ChatPanel({
 			// Queue Next Message (#82)
 			isStreaming={isSending}
 			isQueued={queue.isQueued}
+			// A held DETACHED action (surface click while offline) is not
+			// composer text: the banner must not claim the draft is queued, and
+			// Delete must not be offered (it emits clearComposer — A2UI-I08).
+			isQueuedAction={queue.pending?.detachedSurfaceId !== undefined}
 			onQueueMessage={handleQueueMessage}
 			onEditQueued={handleEditQueued}
 			onDeleteQueued={handleDeleteQueued}
