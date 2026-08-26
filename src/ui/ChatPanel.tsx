@@ -1534,6 +1534,13 @@ export function ChatPanel({
 		if (decision.dispatchAcquisitionComplete) {
 			queue.dispatch({ type: "acquisitionComplete", hasSessionId: true });
 		}
+		// A2UI-I08: acquisition failed outright. The reducer releases a held
+		// detached action (a surface click has no composer text to retry from,
+		// so holding it would strand the surface pending with the composer
+		// blocked); a held composer message still holds per Decision 5.
+		if (decision.dispatchAcquisitionFailed) {
+			queue.dispatch({ type: "acquisitionFailed" });
+		}
 	}, [lazySession.state, agent.session.sessionId, queue.dispatch]);
 
 	// Send wrapper: ready → handleSendMessage directly. Not-ready → enqueue the

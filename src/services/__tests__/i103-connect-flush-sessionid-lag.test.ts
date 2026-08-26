@@ -114,7 +114,11 @@ describe("decideConnectFlush — pure transitions", () => {
 				hasSessionId: true,
 				awaitingSessionId: false,
 			}),
-		).toEqual({ dispatchAcquisitionComplete: true, awaitingSessionId: false });
+		).toEqual({
+			dispatchAcquisitionComplete: true,
+			dispatchAcquisitionFailed: false,
+			awaitingSessionId: false,
+		});
 	});
 
 	it("edge without sessionId → arm await, no dispatch", () => {
@@ -125,7 +129,11 @@ describe("decideConnectFlush — pure transitions", () => {
 				hasSessionId: false,
 				awaitingSessionId: false,
 			}),
-		).toEqual({ dispatchAcquisitionComplete: false, awaitingSessionId: true });
+		).toEqual({
+			dispatchAcquisitionComplete: false,
+			dispatchAcquisitionFailed: false,
+			awaitingSessionId: true,
+		});
 	});
 
 	it("awaiting + sessionId commits while ready (no fresh edge) → dispatch", () => {
@@ -136,7 +144,11 @@ describe("decideConnectFlush — pure transitions", () => {
 				hasSessionId: true,
 				awaitingSessionId: true,
 			}),
-		).toEqual({ dispatchAcquisitionComplete: true, awaitingSessionId: false });
+		).toEqual({
+			dispatchAcquisitionComplete: true,
+			dispatchAcquisitionFailed: false,
+			awaitingSessionId: false,
+		});
 	});
 
 	it("turn end (busy→ready) is NOT an acquisition edge → no dispatch (disjoint)", () => {
@@ -147,7 +159,11 @@ describe("decideConnectFlush — pure transitions", () => {
 				hasSessionId: true,
 				awaitingSessionId: false,
 			}),
-		).toEqual({ dispatchAcquisitionComplete: false, awaitingSessionId: false });
+		).toEqual({
+			dispatchAcquisitionComplete: false,
+			dispatchAcquisitionFailed: false,
+			awaitingSessionId: false,
+		});
 	});
 
 	it("leaving ready clears the await flag", () => {
@@ -158,7 +174,11 @@ describe("decideConnectFlush — pure transitions", () => {
 				hasSessionId: true,
 				awaitingSessionId: true,
 			}),
-		).toEqual({ dispatchAcquisitionComplete: false, awaitingSessionId: false });
+		).toEqual({
+			dispatchAcquisitionComplete: false,
+			dispatchAcquisitionFailed: false,
+			awaitingSessionId: false,
+		});
 	});
 });
 

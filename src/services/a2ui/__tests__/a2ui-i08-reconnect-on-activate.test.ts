@@ -20,6 +20,9 @@
  * Queue-of-one still wins: an occupied slot refuses even when disconnected.
  */
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { decideConnectFlush } from "../../message-queue-logic";
 import { deriveSurfaceActionAffordance } from "../surface-state";
 import {
 	deriveA2uiTabDispatch,
@@ -342,5 +345,91 @@ describe("A2UI-I08 queue reducer — detached actions", () => {
 		});
 		expect(second.state.pending).toEqual(action);
 		expect(second.effects).toEqual([]);
+	});
+});
+
+// ============================================================================
+// 6. The escape hatch must actually FIRE.
+//
+// Found by driving H7 live (2026-08-25): `acquisitionFailed` was declared in
+// the reducer's event union and handled there, but NOTHING in the app ever
+// dispatched it — dead pre-existing code. That was harmless while only
+// composer text could be held (a failed acquisition holds the message and the
+// user still has their text plus Edit/Delete). A2UI-I08 made it matter: a held
+// ACTION with no dispatch of this event strands the surface pending with the
+// composer's send blocked and no banner escape — the exact deadlock the
+// reducer branch was written to prevent.
+//
+// Same wiring-gap class as the isQueuedAction miss: every unit test green, the
+// behavior absent, because nothing asserted the event reaches the reducer.
+// ============================================================================
+
+describe("A2UI-I08 escape hatch — acquisition failure is dispatched", () => {
+	it("decides to dispatch on the connecting -> error edge", () => {
+		const d = decideConnectFlush({
+			prevState: "connecting",
+			state: "error",
+			hasSessionId: false,
+			awaitingSessionId: false,
+		});
+		expect(d.dispatchAcquisitionFailed).toBe(true);
+		expect(d.dispatchAcquisitionComplete).toBe(false);
+	});
+
+	it("decides to dispatch on the idle -> error edge", () => {
+		expect(
+			decideConnectFlush({
+				prevState: "idle",
+				state: "error",
+				hasSessionId: false,
+				awaitingSessionId: false,
+			}).dispatchAcquisitionFailed,
+		).toBe(true);
+	});
+
+	it("does NOT treat a mid-turn failure as an acquisition failure", () => {
+		// busy -> error is a turn that errored, not an acquisition that failed.
+		// Dispatching here would drop a message queued behind a live turn.
+		expect(
+			decideConnectFlush({
+				prevState: "busy",
+				state: "error",
+				hasSessionId: true,
+				awaitingSessionId: false,
+			}).dispatchAcquisitionFailed,
+		).toBe(false);
+	});
+
+	it("does not dispatch on a successful acquisition", () => {
+		const d = decideConnectFlush({
+			prevState: "connecting",
+			state: "ready",
+			hasSessionId: true,
+			awaitingSessionId: false,
+		});
+		expect(d.dispatchAcquisitionFailed).toBe(false);
+		expect(d.dispatchAcquisitionComplete).toBe(true);
+	});
+
+	it("does not dispatch while still connecting", () => {
+		expect(
+			decideConnectFlush({
+				prevState: "idle",
+				state: "connecting",
+				hasSessionId: false,
+				awaitingSessionId: false,
+			}).dispatchAcquisitionFailed,
+		).toBe(false);
+	});
+
+	// The layer the live drive proved was missing: the decision is worthless
+	// unless ChatPanel acts on it.
+	it("ChatPanel dispatches acquisitionFailed to the queue reducer", () => {
+		const source = readFileSync(
+			resolve(process.cwd(), "src/ui/ChatPanel.tsx"),
+			"utf8",
+		);
+		expect(source).toMatch(/dispatchAcquisitionFailed/);
+		expect(source).toMatch(/type:\s*"acquisitionFailed"/);
 	});
 });
