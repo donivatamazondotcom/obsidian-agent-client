@@ -6,6 +6,7 @@
  */
 
 import { Modal, App, Notice, setIcon, setTooltip } from "obsidian";
+import { tooltipRef } from "./shared/useTooltip";
 import * as React from "react";
 const { useState, useCallback } = React;
 import { createRoot, Root } from "react-dom/client";
@@ -918,17 +919,26 @@ export function SessionHistoryContent({
 								type="button"
 								role="tab"
 								aria-selected={view.listSource === "agent"}
-								aria-label={t("chat.history.agentSessions", {
-									agent: currentAgentLabel,
-								})}
 								disabled={!view.agentViewAvailable}
-								title={
-									view.agentViewAvailable
-										? undefined
-										: t("chat.history.noServerList", {
+								// One tooltip, one accessible name (I200). This
+								// carried aria-label AND title, so when the agent
+								// could not list sessions the browser rendered
+								// Obsidian's tooltip from aria-label and the OS
+								// rendered a second one from title, saying
+								// different things. Both catalog strings embed
+								// the agent name, which is also the button's
+								// visible text, so the accessible name keeps it
+								// either way (WCAG 2.5.3).
+								ref={tooltipRef({
+									visibleLabel: currentAgentLabel,
+									reason: view.agentViewAvailable
+										? t("chat.history.agentSessions", {
 												agent: currentAgentLabel,
 											})
-								}
+										: t("chat.history.noServerList", {
+												agent: currentAgentLabel,
+											}),
+								})}
 								className={`agent-client-session-history-source-pill${
 									view.listSource === "agent" ? " is-active" : ""
 								}`}
@@ -976,14 +986,23 @@ export function SessionHistoryContent({
 					    rendered as text (not tooltip-only) so it is reachable by
 					    screen readers. */}
 					{showFolderFilter && (
-						<label
-							className="agent-client-session-history-filter"
-							title={t("chat.history.onlyThisFolderTitle")}
-						>
+						<label className="agent-client-session-history-filter">
+							{/* The explanation rides the CHECKBOX, not the
+							    <label> (I199). A <label>'s text content is what
+							    names its control, so putting aria-label on the
+							    label element — which is what setTooltip does —
+							    can make assistive tech name the checkbox with
+							    the long explanation instead of "Only this
+							    folder". On the input, the composed text keeps
+							    the visible label first. */}
 							<input
 								type="checkbox"
 								checked={filterByCurrentVault}
 								onChange={handleFilterChange}
+								ref={tooltipRef({
+									visibleLabel: t("chat.history.onlyThisFolder"),
+									reason: t("chat.history.onlyThisFolderTitle"),
+								})}
 							/>
 							<span className="agent-client-session-history-filter-text">
 								<span className="agent-client-session-history-filter-title">

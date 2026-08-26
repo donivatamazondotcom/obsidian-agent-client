@@ -33,6 +33,14 @@ import type AgentClientPlugin from "../../plugin";
 
 vi.mock("obsidian", () => ({
 	setIcon: vi.fn(),
+	// InputToolbar's dropdowns attach tooltips via ui/shared/useTooltip, which
+	// imports setTooltip. A partial obsidian mock without it throws the moment a
+	// dropdown renders — these props render none today, so include it to keep
+	// that a non-issue rather than a confusing future failure (same trap the
+	// Platform key documents).
+	setTooltip: vi.fn((el: HTMLElement, text: string) => {
+		el.setAttribute("aria-label", text);
+	}),
 	MarkdownRenderer: { render: vi.fn() },
 	Component: class {},
 	Platform: { isMobile: false },

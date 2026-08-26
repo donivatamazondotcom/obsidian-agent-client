@@ -610,6 +610,151 @@ const idleIndicatorNotAnimating: Invariant = {
 	},
 };
 
+/**
+ * INV-9 — No element renders two tooltips.
+ *
+ * The ESLint ban on the JSX `title` attribute (I199) catches AUTHORING. It
+ * cannot see a `title` that arrives at runtime: `setAttribute("title", …)`, a
+ * spread of agent-supplied props, a third-party library, or a future Obsidian
+ * API. This probe closes that gap by asserting the RENDERED outcome — the thing
+ * the user actually sees.
+ *
+ * Two offences, both real:
+ *   - `title` + `aria-label` on one element → Obsidian's themed tooltip AND the
+ *     OS-native one, styled differently, sometimes saying different things.
+ *     That is the I199/I200 defect exactly.
+ *   - `title` alone on an interactive element → a single OS-native tooltip,
+ *     inconsistent with every other tooltip in the app (SessionHistoryModal's
+ *     folder-filter label was this shape).
+ *
+ * Scope is the plugin's own surfaces. Obsidian core and other plugins use
+ * `title` freely and are not ours to police.
+ *
+ * The probe opens the session-history modal, because the element that motivated
+ * I200 only exists while that modal is mounted — a scan of the chat panel alone
+ * would report a clean pass without ever looking at it. Opening a modal in a
+ * disposable smoke vault is inconsequential; it is closed again afterwards.
+ *
+ * Self-test: a scan that returns zero because it queried the wrong root, or ran
+ * before the UI mounted, is indistinguishable from a clean pass. So the probe
+ * plants a synthetic offender first and requires the scanner to find it. If the
+ * control does not fire, the result is a FAIL describing the probe as inert
+ * rather than a green tick.
+ */
+const noDuplicateTooltips: Invariant = {
+	id: "INV-9",
+	name: "No element renders two tooltips",
+	guards: "duplicate title + aria-label tooltips (I199 / I200)",
+	async run(cdp) {
+		// Bring the modal's controls into the DOM. Fire-and-forget like the
+		// other command calls; the wait below is what confirms it mounted.
+		await cdp.executeCommand(`${PLUGIN_ID}:open-session-history`);
+		let modalOpened = true;
+		try {
+			await cdp.waitForElement(".agent-client-session-history-source-pill", 5000);
+		} catch {
+			// Not fatal — the chat panel is still worth scanning, but say so
+			// rather than reporting full coverage.
+			modalOpened = false;
+		}
+
+		const SCAN = `
+			const INTERACTIVE = 'button, [role="button"], [role="tab"], [role="checkbox"], a[href], input, select, textarea, [tabindex]';
+			// The plugin's surfaces: the chat view container, plus any open
+			// modal that is one of ours (the modal renders outside the view).
+			const roots = Array.from(
+				document.querySelectorAll(
+					'[data-type="${VIEW_TYPE}"], .modal-container'
+				)
+			).filter((root) =>
+				root.getAttribute("data-type") === "${VIEW_TYPE}" ||
+				root.querySelector('[class*="agent-client-"]') !== null
+			);
+			let scanned = 0;
+			const both = [];
+			const titleOnly = [];
+			for (const root of roots) {
+				for (const el of Array.from(root.querySelectorAll(INTERACTIVE))) {
+					scanned++;
+					const hasTitle = el.hasAttribute("title") && el.getAttribute("title") !== "";
+					if (!hasTitle) continue;
+					const where =
+						el.tagName.toLowerCase() +
+						(el.className ? "." + String(el.className).split(" ").join(".") : "") +
+						' title="' + el.getAttribute("title") + '"';
+					if (el.hasAttribute("aria-label")) {
+						both.push(where + ' aria-label="' + el.getAttribute("aria-label") + '"');
+					} else {
+						titleOnly.push(where);
+					}
+				}
+			}
+			return { roots: roots.length, scanned, both, titleOnly };
+		`;
+
+		interface Scan {
+			roots: number;
+			scanned: number;
+			both: string[];
+			titleOnly: string[];
+		}
+
+		// --- positive control: plant an offender, require the scan to see it ---
+		const control = await evalJson<Scan>(
+			cdp,
+			`const host = document.querySelector('[data-type="${VIEW_TYPE}"]');
+			 if (host === null) return { roots: 0, scanned: 0, both: [], titleOnly: [] };
+			 const probe = document.createElement("button");
+			 probe.setAttribute("title", "__inv9_control__");
+			 probe.setAttribute("aria-label", "__inv9_control__");
+			 probe.setAttribute("data-inv9-control", "");
+			 host.appendChild(probe);
+			 try { ${SCAN} } finally { probe.remove(); }`,
+		);
+		const controlSaw = control.both.some((e) => e.includes("__inv9_control__"));
+		if (!controlSaw) {
+			return {
+				status: "fail",
+				detail:
+					`probe is inert — the scanner did not find its own planted offender ` +
+					`(roots=${control.roots}, scanned=${control.scanned}). A zero result ` +
+					`from this probe cannot be trusted; fix the root selectors before reading it.`,
+			};
+		}
+
+		// --- the real scan ---
+		const r = await evalJson<Scan>(cdp, SCAN);
+
+		if (await cdp.evaluate<boolean>(`!!document.querySelector(".modal-close-button")`)) {
+			await cdp.evaluate(`document.querySelector(".modal-close-button").click()`);
+		}
+
+		const coverage =
+			`roots=${r.roots}, interactive elements scanned=${r.scanned}` +
+			(modalOpened ? ", session-history modal included" : ", session-history modal NOT open");
+
+		if (r.both.length > 0 || r.titleOnly.length > 0) {
+			const lines = [
+				r.both.length > 0
+					? `title + aria-label (two tooltips): ${r.both.join(" | ")}`
+					: "",
+				r.titleOnly.length > 0
+					? `title only (OS-native tooltip, inconsistent): ${r.titleOnly.join(" | ")}`
+					: "",
+			].filter(Boolean);
+			return {
+				status: "fail",
+				detail: `${lines.join("; ")} — route through attachTooltip (ui/shared/useTooltip). [${coverage}]`,
+			};
+		}
+
+		return {
+			status: "pass",
+			detail: `no title attribute on any plugin-owned interactive element [${coverage}]`,
+		};
+	},
+};
+
 /** Chat view must exist before DOM probes run. */
 export async function ensureChatViewOpen(cdp: Cdp): Promise<void> {
 	const count = await cdp.evaluate<number>(
@@ -630,4 +775,5 @@ export const invariants: Invariant[] = [
 	quickPromptLabels,
 	a2uiButtonLabelContainment,
 	idleIndicatorNotAnimating,
+	noDuplicateTooltips,
 ];

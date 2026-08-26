@@ -74,6 +74,9 @@ describe("SessionHistoryContent — Local/Agent toggle", () => {
 		const agentPill = screen.getByRole("tab", { name: /Claude Code/ });
 		expect(agentPill).toBeTruthy();
 		expect((agentPill as HTMLButtonElement).disabled).toBe(false);
+		// Enabled state names the pill without a second OS-native tooltip.
+		expect(agentPill.getAttribute("aria-label")).toMatch(/Agent server sessions/);
+		expect(agentPill.hasAttribute("title")).toBe(false);
 	});
 
 	it("always shows the toggle but disables the Agent pill for a non-listing agent (Kiro), with a tooltip (D3)", () => {
@@ -87,9 +90,19 @@ describe("SessionHistoryContent — Local/Agent toggle", () => {
 		);
 		const agentPill = screen.getByRole("tab", { name: /Kiro CLI/ });
 		expect((agentPill as HTMLButtonElement).disabled).toBe(true);
-		expect(agentPill.getAttribute("title")).toMatch(
+
+		// ONE tooltip, via Obsidian's mechanism (aria-label). This pill used to
+		// carry aria-label AND a DOM `title`, so a non-listing agent rendered
+		// two tooltips saying different things (I200).
+		expect(agentPill.getAttribute("aria-label")).toMatch(
 			/doesn't keep a session list/,
 		);
+		expect(agentPill.hasAttribute("title")).toBe(false);
+		// WCAG 2.5.3 label-in-name: the tooltip doubles as the accessible name,
+		// so it must still contain the pill's visible text. Losing this is the
+		// exact regression A2UI-I08 shipped.
+		expect(agentPill.textContent).toContain("Kiro CLI");
+		expect(agentPill.getAttribute("aria-label")).toContain("Kiro CLI");
 		// Local pill is still there and active.
 		expect(
 			screen

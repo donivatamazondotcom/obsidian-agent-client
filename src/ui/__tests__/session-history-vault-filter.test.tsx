@@ -106,6 +106,37 @@ describe('"Only this folder" filter — default + transparency', () => {
 	});
 });
 
+describe('"Only this folder" filter — tooltip placement (I199)', () => {
+	afterEach(cleanup);
+
+	it("puts the explanation on the checkbox, not the <label>", () => {
+		render(<SessionHistoryContent {...makeProps({ sessions: TWO_FOLDERS })} />);
+		const checkbox = screen.getByRole("checkbox");
+
+		// A <label>'s text content is what names its control, so an aria-label
+		// on the LABEL element can make assistive tech name the checkbox with
+		// the long explanation instead of "Only this folder". It belongs on the
+		// input.
+		const label = checkbox.closest("label");
+		expect(label).not.toBeNull();
+		expect(label!.hasAttribute("aria-label")).toBe(false);
+		expect(label!.hasAttribute("title")).toBe(false);
+
+		// No DOM `title` anywhere in the filter — that rendered an OS-native
+		// tooltip, inconsistent with every other tooltip in the app.
+		expect(checkbox.hasAttribute("title")).toBe(false);
+	});
+
+	it("keeps the visible label at the front of the composed tooltip", () => {
+		render(<SessionHistoryContent {...makeProps({ sessions: TWO_FOLDERS })} />);
+		const aria = screen.getByRole("checkbox").getAttribute("aria-label");
+		// Label-in-name: the tooltip doubles as the accessible name, so the
+		// visible text has to survive into it — followed by the explanation.
+		expect(aria).toMatch(/^Only this folder — /);
+		expect(aria).toMatch(/working folder is this one/);
+	});
+});
+
 describe('"Only this folder" filter — live Agent view narrows server-side', () => {
 	afterEach(cleanup);
 

@@ -51,6 +51,35 @@ const baseRestrictedSyntax = [
 		message:
 			"Don't read process.platform directly — branch via utils/platform.ts so the platform check lives in one place (I134 sibling).",
 	},
+	{
+		// Three mechanisms rendered tooltips in this UI and nothing ranked them,
+		// so duplicates kept recurring: setTooltip() from obsidian, a hand-written
+		// aria-label, and the DOM `title` attribute. The first two are the SAME
+		// mechanism — setTooltip's implementation IS aria-label (verified against
+		// the running app 2026-08-25) — which is why nobody noticed the third one
+		// is different. `title` renders the OS-native tooltip (square, no arrow,
+		// different font), so an element carrying `title` AND either of the others
+		// shows TWO tooltips, styled differently, sometimes saying different
+		// things. It "works", which is what made it invisible.
+		//
+		// Because setTooltip writes aria-label, tooltip text is also the
+		// accessible name — so tooltip text that omits the element's visible label
+		// is a WCAG 2.5.3 label-in-name regression. attachTooltip()
+		// (ui/shared/useTooltip) owns that composition in one place.
+		//
+		// Scope is the JSX ATTRIBUTE only. SVG `<title>` ELEMENTS, object
+		// properties named `title` (session records), TS interface/type members,
+		// `rec.title` reads and "<title>…</title>" marker strings are all
+		// untouched — pinned as negative fixtures in
+		// src/__tests__/title-attribute-ban.test.ts, which also drives the
+		// selector against positives so a rule that matches nothing cannot pass
+		// silently. ToolbarDropdown's `title=` call sites are JSX attributes on a
+		// React component and DO trip this, which is intended: the prop is named
+		// `tooltip` now (I199 part 3).
+		selector: "JSXAttribute[name.name='title']",
+		message:
+			"Don't use the `title` attribute — it renders a second, OS-native tooltip alongside Obsidian's, and Obsidian's tooltip comes from aria-label. Use attachTooltip() from ui/shared/useTooltip, which routes through setTooltip and keeps the visible label in the accessible name (I199).",
+	},
 ];
 
 // Phase 4 §2c (the former "1b"): every savedSessions metadata/title write must

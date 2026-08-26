@@ -20,7 +20,7 @@
  */
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { setTooltip } from "obsidian";
+import { tooltipRef } from "./shared/useTooltip";
 import type AgentClientPlugin from "../plugin";
 import { validateA2uiFence } from "../services/a2ui/validator";
 import { getLogger } from "../utils/logger";
@@ -234,27 +234,18 @@ export function A2uiSurfaceHost(props: A2uiSurfaceHostProps): React.JSX.Element 
 						key={id}
 						className={className}
 						disabled={disabled}
-						// Obsidian's own tooltip — NOT the `title` attribute,
-						// which renders a SECOND, OS-native tooltip alongside it
-						// (smoke finding, 2026-08-25). setTooltip is the
-						// sanctioned mechanism and is what the rest of the UI
-						// uses (ChatHeader, PermissionBanner, SessionHistoryModal).
-						// It also sets the accessible label, so no aria-label here.
-						ref={(el) => {
-							if (el === null) return;
-							if (reason !== undefined) {
-								// setTooltip's mechanism IS aria-label (verified
-								// against the running app), so the text must keep
-								// the visible label or the accessible name loses
-								// it — WCAG 2.5.3 label-in-name.
-								setTooltip(el, `${component.label} — ${reason}`);
-								return;
-							}
-							// Live + idle: nothing to explain. Clear any tooltip
-							// a previous state left behind.
-							el.removeAttribute("aria-label");
-							el.removeAttribute("data-tooltip");
-						}}
+						// This is where the tooltip rules were first worked out
+						// (A2UI-I08): Obsidian's tooltip, never the `title`
+						// attribute, and the text must keep the button's visible
+						// label or the accessible name loses it. Those rules now
+						// live in the shared helper, so every surface gets them
+						// — including the locale-aware separator, which was
+						// hardcoded here (I199). `reason === undefined` (live +
+						// idle) resolves to "clear any stale tooltip".
+						ref={tooltipRef({
+							visibleLabel: component.label,
+							reason: reason ?? null,
+						})}
 						onClick={() => handleActivate(component)}
 					>
 						{component.label}

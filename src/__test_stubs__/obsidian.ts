@@ -35,7 +35,17 @@ export const prepareFuzzySearch = (query: string) => (text: string) =>
 		? { score: -text.length, matches: [] as number[][] }
 		: null;
 
-export const setTooltip = vi.fn();
+/**
+ * Mirrors the real `setTooltip`, which is implemented by setting **aria-label**
+ * and nothing else (verified against the running app 2026-08-25). A no-op stub
+ * here is what let the label-in-name regression class (A2UI-I08 / I199) pass
+ * unit tests: tooltip text never reached the DOM, so no test could assert the
+ * accessible name it produces. Still a vi.fn, so existing
+ * `toHaveBeenCalledWith` assertions keep working.
+ */
+export const setTooltip = vi.fn((el: HTMLElement, tooltip: string) => {
+	el.setAttribute("aria-label", tooltip);
+});
 
 export const MarkdownRenderer = {
 	render: vi.fn(),

@@ -3,6 +3,7 @@ const { useRef, useEffect, useCallback, useMemo } = React;
 import { setIcon, Menu } from "obsidian";
 
 import { registerOpenMenu, showMenuAtEvent } from "../utils/menu-registry";
+import { useTooltip } from "./shared/useTooltip";
 import { isSessionLive } from "../resolvers/send-affordance";
 import type { TabSessionState } from "../hooks/useTabSessionState";
 import { t } from "../i18n";
@@ -27,7 +28,16 @@ interface ToolbarDropdownItem {
 
 interface ToolbarDropdownProps {
 	label: string;
-	title: string;
+	/**
+	 * The extra thing the tooltip explains (what this dropdown selects, or the
+	 * current option's description) — NOT the accessible name on its own. It is
+	 * composed with `label` so the visible text survives into the accessible
+	 * name (WCAG 2.5.3); see ui/shared/useTooltip. Named `tooltip` to match
+	 * HeaderButton: the old name `title` taught "title is how you do tooltips
+	 * here", one step from writing the DOM `title` attribute that renders a
+	 * second, OS-native tooltip (I199).
+	 */
+	tooltip: string;
 	items: ToolbarDropdownItem[];
 	currentValue: string | undefined;
 	onChange: (value: string) => void;
@@ -41,7 +51,7 @@ interface ToolbarDropdownProps {
  */
 function ToolbarDropdown({
 	label,
-	title,
+	tooltip,
 	items,
 	currentValue,
 	onChange,
@@ -82,7 +92,7 @@ function ToolbarDropdown({
 			);
 
 			menu.addItem((menuItem) => {
-				menuItem.setTitle(title).setIsLabel(true);
+				menuItem.setTitle(tooltip).setIsLabel(true);
 			});
 
 			let lastGroupName: string | undefined;
@@ -113,10 +123,17 @@ function ToolbarDropdown({
 			// via the registerOpenMenu callback above). (I123)
 			if (!triggeredByKeyboard) buttonRef.current?.blur();
 		},
-		[items, currentValue, onChange],
+		[items, currentValue, onChange, tooltip],
 	);
 
 	const wrapperClass = `clickable-icon agent-client-toolbar-dropdown${className ? ` ${className}` : ""}`;
+
+	// The button shows `label` (e.g. "Sonnet 4.5") while `tooltip` carries the
+	// description. Setting aria-label to the description alone — which is what
+	// this component did until I199 — replaced the accessible name with text the
+	// user cannot see, so speech input could not activate it. attachTooltip
+	// composes both.
+	useTooltip(buttonRef, { visibleLabel: label, reason: tooltip });
 
 	return (
 		<button
@@ -125,7 +142,6 @@ function ToolbarDropdown({
 			// keep in sync with FOCUS_CLUSTER_ATTR (composer-focus-tracker)
 			data-acp-focus-cluster=""
 			className={wrapperClass}
-			aria-label={title}
 			onClick={handleClick}
 		>
 			<span className="agent-client-toolbar-dropdown-label-area">
@@ -344,13 +360,13 @@ export function InputToolbar({
 							(it) => it.value === option.currentValue,
 						);
 						const label = currentItem?.label ?? option.name;
-						const title = option.description ?? option.name;
+						const tooltip = option.description ?? option.name;
 
 						return (
 							<ToolbarDropdown
 								key={option.id}
 								label={label}
-								title={title}
+								tooltip={tooltip}
 								items={items}
 								currentValue={option.currentValue}
 								onChange={(value) => {
@@ -369,7 +385,7 @@ export function InputToolbar({
 						{modes && modes.availableModes.length > 1 && onModeChange && (
 							<ToolbarDropdown
 								label={currentModeLabel}
-								title={
+								tooltip={
 									modes.availableModes.find(
 										(m) => m.id === modes.currentModeId,
 									)?.description ?? t("chat.composer.selectMode")
@@ -385,7 +401,7 @@ export function InputToolbar({
 							onModelChange && (
 								<ToolbarDropdown
 									label={currentModelLabel}
-									title={
+									tooltip={
 										models.availableModels.find(
 											(m) =>
 												m.modelId ===
